@@ -10,13 +10,9 @@ case "$1" in
     set +x
     return=$?
     ;;
-  --shell)
+  *)
     set -x
     erl $ERL_FLAGS -s gta2k start_server
     set +x
-    return=$?
-    ;;
-  *)
-    erl $ERL_FLAGS -detached -s gta2k start_server
     return=$?
 esac

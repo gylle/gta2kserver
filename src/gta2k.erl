@@ -58,7 +58,8 @@ hub_loop(State) ->
   receive
     { broadcast, Type, Sender, Data } ->
       % Send to everyone except Sender by filtering the user list
-      [ User#user.pid ! { data_out, Type, Data } || User<-lists:filter(fun(Pid)-> not(Pid == Sender) end, State#hub_state.users) ],
+      AllPids = [ User#user.pid || User<-State#hub_state.users ],
+      [ Pid ! { data_out, Type, Data } || Pid<-lists:filter(fun(Pid)-> not(Pid == Sender) end, AllPids) ],
       hub_loop(State);
 
     { new_user_id, Pid } ->
@@ -72,8 +73,8 @@ hub_loop(State) ->
       NewUser = #user{id = Id, pid = Pid, user_data = UserData},
       NewUsers = add_user(State#hub_state.users, NewUser),
       NewState = State#hub_state{users = NewUsers},
-      % Send information to all new users
-      [ User#user.pid ! { data_out, new_user, UserData } || User<-State#hub_state.users ],
+      % Send information to all existing users
+      [ User#user.pid ! { data_out, new_user, UserData, <<>> } || User<-State#hub_state.users ],
       % Send ack and user list to new user
       Pid ! { new_user_ack },
       [ Pid ! { data_out, new_user, User#user.user_data, <<>> } || User<-State#hub_state.users ],

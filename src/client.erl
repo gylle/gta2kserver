@@ -28,8 +28,8 @@ new_client(Socket) ->
 pack_position([]) -> [];
 pack_position([H|T]) -> [<<H:32/signed>> | pack_position(T)].
 
-send_data(MyState, OtherState, Type, Data) ->
-  Socket = MyState#client_state.socket,
+send_data(State, Type, Data) ->
+  Socket = State#client_state.socket,
   % Packet assembly is a tad ugly, but gen_tcp:send will go through the list
   % passed to it and send every item. Assembling lists is cheaper than
   % assembling new binaries with the whole message
@@ -37,15 +37,20 @@ send_data(MyState, OtherState, Type, Data) ->
     reg_ack ->
       gen_tcp:send(Socket, [ <<?PROTO_REG_ACK:16>> ]);
     move ->
-      gen_tcp:send(Socket, [ <<?PROTO_MOVE:16>>, pack_position(OtherState#client_state.position), <<(OtherState#client_state.angle):16/signed>> ]);
+      { OtherState } = Data,
+      gen_tcp:send(Socket, [ <<?PROTO_MOVE:16, (OtherState#client_state.id):32>>, pack_position(OtherState#client_state.position),
+          <<(OtherState#client_state.angle):16/signed>> ]);
     amsg ->
-      gen_tcp:send(Socket, [ <<?PROTO_AMSG:16, (OtherState#client_state.id):32, (size(Data)):16>>, Data ]);
+      { OtherState, Msg } = Data,
+      gen_tcp:send(Socket, [ <<?PROTO_AMSG:16, (OtherState#client_state.id):32, (size(Msg)):16>>, Msg ]);
     smsg ->
       gen_tcp:send(Socket, [ <<?PROTO_SMSG:16, (size(Data)):16>>, Data ]);
     new_user ->
+      { OtherState } = Data,
       Nick = list_to_binary(OtherState#client_state.nick),
       gen_tcp:send(Socket, [ <<?PROTO_NEW_USER:16, (OtherState#client_state.id):32, (size(Nick)):8>>, Nick ]);
     dropped_user ->
+      [ OtherState ] = Data,
       gen_tcp:send(Socket, <<?PROTO_DROPPED_USER:16, (OtherState#client_state.id):32>>)
   end.
 
@@ -76,7 +81,7 @@ handle_data(State) ->
           receive
             { new_user_ack } ->
               io:format("Client registered~p.~n", [NewState]),
-              send_data(NewState, undefined, reg_ack, []),
+              send_data(NewState, reg_ack, []),
               handle_data(NewState)
           end;
 
@@ -94,13 +99,15 @@ handle_data(State) ->
 
         <<?PROTO_MOVE:16, Pos_x:32/signed, Pos_y:32/signed, Pos_z:32/signed, Angle:16/signed, Rest/binary>> ->
           NewState = State#client_state{buffer = Rest, position = [Pos_x, Pos_y, Pos_z], angle = Angle},
-          whereis(hub) ! { broadcast, move, self(), [ NewState ] },
+          whereis(hub) ! { broadcast, move, self(), { NewState } },
           handle_data(NewState);
 
-        <<?PROTO_AMSG:16, Length:16>> when size(Buffer) >= (Length+2) ->
+        <<?PROTO_AMSG:16, Length:16, _/binary>> when size(Buffer) >= (Length+2) ->
+          % TODO: max length 1023
           <<_:16, _:16, Msg:Length/binary, Rest/binary>> = Buffer,
           NewState = State#client_state{buffer = Rest},
-          whereis(hub) ! { broadcast, amsg, self(), [ NewState, Msg ] },
+          whereis(hub) ! { broadcast, amsg, self(), { NewState, Msg } },
+          io:format(">> ~p said: ~p.~n", [NewState#client_state.nick, Msg]),
           handle_data(NewState);
 
         _Else -> % No matching pattern
@@ -131,8 +138,7 @@ recv_loop(State) ->
           true
       end,
 			io:format("Client disconnected ~p.~n", [State]);
-    {data_out, Type, OtherState, Data} ->
-      send_data(State, OtherState, Type, Data),
+    {data_out, Type, Data} ->
+      send_data(State, Type, Data),
 			recv_loop(State)
-
 	end.

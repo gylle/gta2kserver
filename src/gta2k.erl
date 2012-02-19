@@ -74,10 +74,10 @@ hub_loop(State) ->
       NewUsers = add_user(State#hub_state.users, NewUser),
       NewState = State#hub_state{users = NewUsers},
       % Send information to all existing users
-      [ User#user.pid ! { data_out, new_user, UserData, <<>> } || User<-State#hub_state.users ],
+      [ User#user.pid ! { data_out, new_user, { UserData } } || User<-State#hub_state.users ],
       % Send ack and user list to new user
       Pid ! { new_user_ack },
-      [ Pid ! { data_out, new_user, User#user.user_data, <<>> } || User<-State#hub_state.users ],
+      [ Pid ! { data_out, new_user, { User#user.user_data } } || User<-State#hub_state.users ],
       hub_loop(NewState);
 
     { update_user_data, _Id, _UserData } ->

@@ -100,7 +100,7 @@ handle_data(State) ->
           whereis(hub) ! { new_user, self(), Id, NewState },
           receive
             { new_user_ack } ->
-              io:format("Client registered: ~s.~n", [NewState#client_state.nick]),
+              io:format("Client registered: ~s(~B).~n", [NewState#client_state.nick, NewState#client_state.id]),
               send_data(NewState, reg_ack, []),
               handle_data(NewState)
           end;
@@ -157,7 +157,7 @@ recv_loop(State) ->
         false ->
           true
       end,
-			io:format("Client disconnected: ~s.~n", [State#client_state.nick]);
+      io:format("Client disconnected: ~s(~B).~n", [State#client_state.nick, State#client_state.id]);
     {data_out, Type, Data} ->
       send_data(State, Type, Data),
 			recv_loop(State)

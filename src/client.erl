@@ -176,7 +176,13 @@ recv_loop(State) ->
       case State#client_state.reg of
         true ->
           whereis(hub) ! { dropped_user, State#client_state.id },
-          io:format("Client disconnected: ~s(~B). Unprocessed data: ~p~n", [State#client_state.nick, State#client_state.id, State#client_state.buffer]);
+          io:format("Client disconnected: ~s(~B).", [State#client_state.nick, State#client_state.id]),
+          case State#client_state.buffer of
+            <<>> ->
+              io:format("~n");
+            <<Buffer/binary>> ->
+              io:format(" Unprocessed data: ~p~n", [Buffer])
+          end;
         false ->
           io:format("Unregistered client disconnected.~n"),
           true

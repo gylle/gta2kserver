@@ -48,7 +48,7 @@ new_client(Socket) ->
   recv_loop(#client_state{socket = Socket}).
 
 pack_xyz([]) -> [];
-pack_xyz([H|T]) -> [<<H:32/signed>> | pack_xyz(T)].
+pack_xyz([H|T]) -> [<<H:32/float>> | pack_xyz(T)].
 
 send_data(State, Type, Data) ->
   Socket = State#client_state.socket,
@@ -122,18 +122,17 @@ handle_data(State) ->
 
         % TODO: rate limit
 
-        <<?PROTO_MOVE:16, Pos_x:32/signed, Pos_y:32/signed, Pos_z:32/signed, Angle:16/signed, Rest/binary>> ->
+        <<?PROTO_MOVE:16, Pos_x:32/float, Pos_y:32/float, Pos_z:32/float, Angle:16/signed, Rest/binary>> ->
           NewState = State#client_state{buffer = Rest, position = [Pos_x, Pos_y, Pos_z], angle = Angle},
           whereis(hub) ! { broadcast, move, self(), { NewState } },
           handle_data(NewState);
 
-        <<?PROTO_RESIZE:16, Size_x:32/signed, Size_y:32/signed, Size_z:32/signed, Rest/binary>> ->
+        <<?PROTO_RESIZE:16, Size_x:32/float, Size_y:32/float, Size_z:32/float, Rest/binary>> ->
           NewState = State#client_state{buffer = Rest, size = [Size_x, Size_y, Size_z]},
           whereis(hub) ! { broadcast, resize, self(), { NewState } },
           handle_data(NewState);
 
-        <<?PROTO_AMSG:16, Length:16, _/binary>> when size(Buffer) >= (Length+2) ->
-          % TODO: max length 1023
+        <<?PROTO_AMSG:16, Length:16, _/binary>> when size(Buffer) >= (Length+2) andalso Length =< 1023 ->
           <<_:16, _:16, Msg:Length/binary, Rest/binary>> = Buffer,
           NewState = State#client_state{buffer = Rest},
           whereis(hub) ! { broadcast, amsg, self(), { NewState, Msg } },
@@ -164,7 +163,7 @@ recv_loop(State) ->
       case State#client_state.reg of
         true ->
           whereis(hub) ! { dropped_user, State#client_state.id },
-          io:format("Client disconnected: ~s(~B).~n", [State#client_state.nick, State#client_state.id]);
+          io:format("Client disconnected: ~s(~B). Unprocessed data: ~p~n", [State#client_state.nick, State#client_state.id, State#client_state.buffer]);
         false ->
           io:format("Unregistered client disconnected.~n"),
           true

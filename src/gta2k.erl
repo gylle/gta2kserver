@@ -93,11 +93,10 @@ hub_loop(State) ->
       NewUser = #user{id = Id, pid = Pid, user_data = UserData},
       NewUsers = add_user(State#hub_state.users, NewUser),
       NewState = State#hub_state{users = NewUsers},
-      % Send information to all existing users
-      [ User#user.pid ! { data_out, new_user, { UserData } } || User<-State#hub_state.users ],
-      % Send ack and user list to new user
+      % Send ack to new user
       Pid ! { new_user_ack },
-      [ Pid ! { data_out, new_user, { User#user.user_data } } || User<-State#hub_state.users ],
+      % Send information to all existing users, which will inform the new user of their precense
+      [ User#user.pid ! { new_user, Pid, UserData } || User<-State#hub_state.users ],
       hub_loop(NewState);
 
     { update_user_data, _Id, _UserData } ->

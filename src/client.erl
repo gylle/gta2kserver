@@ -60,11 +60,21 @@ send_data(State, Type, Data) ->
       gen_tcp:send(Socket, [ <<?PROTO_REG_ACK:16>> ]);
     move ->
       { OtherState } = Data,
-      gen_tcp:send(Socket, [ <<?PROTO_MOVE:16, (OtherState#client_state.id):32>>, pack_xyz(OtherState#client_state.position),
-          <<(OtherState#client_state.angle):16/signed>> ]);
+      case OtherState#client_state.position of
+        undefined ->
+          undefined;
+        _ ->
+          gen_tcp:send(Socket, [ <<?PROTO_MOVE:16, (OtherState#client_state.id):32>>, pack_xyz(OtherState#client_state.position),
+              <<(OtherState#client_state.angle):16/signed>> ])
+      end;
     resize ->
       { OtherState } = Data,
-      gen_tcp:send(Socket, [ <<?PROTO_RESIZE:16, (OtherState#client_state.id):32>>, pack_xyz(OtherState#client_state.size) ]);
+      case OtherState#client_state.size of
+        undefined ->
+          undefined;
+        _ ->
+          gen_tcp:send(Socket, [ <<?PROTO_RESIZE:16, (OtherState#client_state.id):32>>, pack_xyz(OtherState#client_state.size) ])
+      end;
     amsg ->
       { OtherState, Msg } = Data,
       gen_tcp:send(Socket, [ <<?PROTO_AMSG:16, (OtherState#client_state.id):32, (size(Msg)):16>>, Msg ]);
@@ -170,5 +180,11 @@ recv_loop(State) ->
       end;
     {data_out, Type, Data} ->
       send_data(State, Type, Data),
+			recv_loop(State);
+    {new_user, Pid, Data} ->
+      send_data(State, new_user, { Data } ),
+      Pid ! {data_out, new_user, { State } },
+      Pid ! {data_out, move, { State } },
+      Pid ! {data_out, resize, { State } },
 			recv_loop(State)
 	end.

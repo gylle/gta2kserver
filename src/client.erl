@@ -120,6 +120,9 @@ handle_data(State) ->
               handle_data(NewState)
           end;
 
+        <<>> ->
+          State;
+
         _Else -> % No matching pattern
           io:format("No match for ~p ~n", [Buffer]),
           State

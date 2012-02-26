@@ -27,6 +27,7 @@
     reg = false,
     nick,
     position,
+    size,
     angle,
     buffer = <<>>,
     socket,
@@ -37,6 +38,7 @@
 -define (PROTO_REG_COMMIT, 90).
 -define (PROTO_REG_ACK, 91).
 -define (PROTO_MOVE, 100).
+-define (PROTO_RESIZE, 101).
 -define (PROTO_AMSG, 110).
 -define (PROTO_SMSG, 111).
 -define (PROTO_NEW_USER, 120).
@@ -45,8 +47,8 @@
 new_client(Socket) ->
   recv_loop(#client_state{socket = Socket}).
 
-pack_position([]) -> [];
-pack_position([H|T]) -> [<<H:32/signed>> | pack_position(T)].
+pack_xyz([]) -> [];
+pack_xyz([H|T]) -> [<<H:32/signed>> | pack_xyz(T)].
 
 send_data(State, Type, Data) ->
   Socket = State#client_state.socket,
@@ -58,8 +60,11 @@ send_data(State, Type, Data) ->
       gen_tcp:send(Socket, [ <<?PROTO_REG_ACK:16>> ]);
     move ->
       { OtherState } = Data,
-      gen_tcp:send(Socket, [ <<?PROTO_MOVE:16, (OtherState#client_state.id):32>>, pack_position(OtherState#client_state.position),
+      gen_tcp:send(Socket, [ <<?PROTO_MOVE:16, (OtherState#client_state.id):32>>, pack_xyz(OtherState#client_state.position),
           <<(OtherState#client_state.angle):16/signed>> ]);
+    resize ->
+      { OtherState } = Data,
+      gen_tcp:send(Socket, [ <<?PROTO_RESIZE:16, (OtherState#client_state.id):32>>, pack_xyz(OtherState#client_state.size) ]);
     amsg ->
       { OtherState, Msg } = Data,
       gen_tcp:send(Socket, [ <<?PROTO_AMSG:16, (OtherState#client_state.id):32, (size(Msg)):16>>, Msg ]);
@@ -122,12 +127,17 @@ handle_data(State) ->
           whereis(hub) ! { broadcast, move, self(), { NewState } },
           handle_data(NewState);
 
+        <<?PROTO_RESIZE:16, Size_x:32/signed, Size_y:32/signed, Size_z:32/signed, Rest/binary>> ->
+          NewState = State#client_state{buffer = Rest, size = [Size_x, Size_y, Size_z]},
+          whereis(hub) ! { broadcast, resize, self(), { NewState } },
+          handle_data(NewState);
+
         <<?PROTO_AMSG:16, Length:16, _/binary>> when size(Buffer) >= (Length+2) ->
           % TODO: max length 1023
           <<_:16, _:16, Msg:Length/binary, Rest/binary>> = Buffer,
           NewState = State#client_state{buffer = Rest},
           whereis(hub) ! { broadcast, amsg, self(), { NewState, Msg } },
-          io:format(">> ~p said: ~p.~n", [NewState#client_state.nick, Msg]),
+          io:format("amsg: <~s(~B)> '~s'.~n", [NewState#client_state.nick, NewState#client_state.id, Msg]),
           handle_data(NewState);
 
         _Else -> % No matching pattern
@@ -153,11 +163,12 @@ recv_loop(State) ->
 		{tcp_closed, Socket} ->
       case State#client_state.reg of
         true ->
-          whereis(hub) ! { dropped_user, State#client_state.id };
+          whereis(hub) ! { dropped_user, State#client_state.id },
+          io:format("Client disconnected: ~s(~B).~n", [State#client_state.nick, State#client_state.id]);
         false ->
+          io:format("Unregistered client disconnected.~n"),
           true
-      end,
-      io:format("Client disconnected: ~s(~B).~n", [State#client_state.nick, State#client_state.id]);
+      end;
     {data_out, Type, Data} ->
       send_data(State, Type, Data),
 			recv_loop(State)

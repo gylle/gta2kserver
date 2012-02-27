@@ -1,4 +1,4 @@
-.PHONY: default dialyzer clean
+.PHONY: default dialyzer clean dist
 
 TARGETS=ebin/gta2k.beam ebin/client.beam ebin/util.beam
 
@@ -23,3 +23,6 @@ dialyzer:
 
 clean:
 	rm -rf ebin
+
+dist:
+	git archive --prefix=gta2k4lin/ HEAD | bzip2 > gta2kserver-$(shell git describe --tags --always HEAD).tar.bz2
